@@ -1,17 +1,24 @@
+/**
+ * Boilerplate for ESP8266 connecting to MQTT
+ * with the possibility to update firmware OTA
+ */
+
+#include "secrets.h" 
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
-// #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-// WiFi and MQTT endpoints
-const char* ssid     = "";
-const char* password = "";
-const char* mqtt_server = "";
-
+/**
+ * Publish new firmwares like this:
+ * mosquitto_pub -t 'esp/boilerPlate/fw/update' -m 'http://localhost/new_firmware.bin'
+ */
 const String mqtt_topic_base = "esp/boilerPlate";
+const String mqtt_topic_fota = "fw/update";
+const String mqtt_topic_fw_version = "fw/version";
+const String mqtt_topic_fw_info = "fw/info";
 const String FW_VERSION = "1000";
 
 float lastPublishTime = 0;
@@ -21,14 +28,12 @@ void setup() {
   setupWiFi();
   setupMqtt();
   
-  Serial.begin (9600);
+  Serial.begin (115200);
   delay(10);
 }
 
 void loop() {
   loopMqtt();
-
-  Serial.print("INSERT YOUR LOGIC HERE");
   
   // Publish to MQTT every X seconds
   if(millis() - lastPublishTime >= publishInterval) {
@@ -37,6 +42,10 @@ void loop() {
     client.publish(createTopic("hello").c_str(), ((String)"Hello MQTT").c_str());
   }
   
+  /**
+   * INSERT YOUR LOGIC HERE
+   */
+  Serial.println("INSERT YOUR LOGIC HERE");
   delay(1000);
 }
 
@@ -47,7 +56,7 @@ void setupWiFi()
 {
   delay(10);
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+  WiFi.begin(secret_ssid, secret_ssid_password);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -59,7 +68,7 @@ void setupWiFi()
  */
 void setupMqtt()
 {
-  client.setServer(mqtt_server, 1883);
+  client.setServer(secret_mqtt_host, secret_mqtt_port);
   client.setCallback(callback);
 }
 
@@ -68,8 +77,8 @@ void setupMqtt()
  * that we subscribe to
  */
 void callback(char* topic, byte* payload, unsigned int length) {
-  // If we recieve anything on the #/fw/update topic
-  if (strcmp(topic, createTopic("fw/update").c_str()) == 0) {
+  // If we recieve anything on the firmware update topic topic
+  if (strcmp(topic, createTopic(mqtt_topic_fota).c_str()) == 0) {
     String fwURL = "";
     for (int i = 0; i < length; i++) {
       fwURL.concat( (char)payload[i] );
@@ -105,9 +114,9 @@ void reconnectMqtt() {
     
     // Attempt to connect
     if (client.connect(clientId.c_str())) {
-      client.subscribe(createTopic("fw/update").c_str()); // Subscribe on FW updates
+      client.subscribe(createTopic(mqtt_topic_fota).c_str()); // Subscribe on FW updates
       // Publish FW version on boot
-      client.publish(createTopic("fw/version").c_str(), FW_VERSION.c_str());
+      client.publish(createTopic(mqtt_topic_fw_version).c_str(), FW_VERSION.c_str());
     }
     else {
       // Wait 5 seconds before retrying
@@ -117,24 +126,24 @@ void reconnectMqtt() {
 }
 
 /**
- * Download new FW from the URL that we recieved in the #/fw/update topic
+ * Download new FW from the URL that we recieved on the firmware update topic
  */
 void checkForUpdates(String fwURL) {
-  String mqtt_topic_fw_info = createTopic("fw/info");
+  String mqtt_topic_fw_info_full = createTopic(mqtt_topic_fw_info);
 
-  client.publish(mqtt_topic_fw_info.c_str(), ((String)"Checking for firmware updates on:").c_str());
-  client.publish(mqtt_topic_fw_info.c_str(), fwURL.c_str());
+  client.publish(mqtt_topic_fw_info_full.c_str(), ((String)"Checking for firmware updates on:").c_str());
+  client.publish(mqtt_topic_fw_info_full.c_str(), fwURL.c_str());
 
   t_httpUpdate_return ret = ESPhttpUpdate.update( fwURL );
 
   switch(ret) {
     case HTTP_UPDATE_FAILED:
-      client.publish(mqtt_topic_fw_info.c_str(), ((String)HTTP_UPDATE_FAILED).c_str());
-      client.publish(mqtt_topic_fw_info.c_str(), ((String)ESPhttpUpdate.getLastError()).c_str());
-      client.publish(mqtt_topic_fw_info.c_str(), ESPhttpUpdate.getLastErrorString().c_str());
+      client.publish(mqtt_topic_fw_info_full.c_str(), ((String)HTTP_UPDATE_FAILED).c_str());
+      client.publish(mqtt_topic_fw_info_full.c_str(), ((String)ESPhttpUpdate.getLastError()).c_str());
+      client.publish(mqtt_topic_fw_info_full.c_str(), ESPhttpUpdate.getLastErrorString().c_str());
       break;
     case HTTP_UPDATE_NO_UPDATES:
-      client.publish(mqtt_topic_fw_info.c_str(), ((String)HTTP_UPDATE_NO_UPDATES).c_str());
+      client.publish(mqtt_topic_fw_info_full.c_str(), ((String)HTTP_UPDATE_NO_UPDATES).c_str());
       break;
   }
 }
